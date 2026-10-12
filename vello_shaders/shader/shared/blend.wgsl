@@ -80,16 +80,32 @@ fn svg_lum(c: vec3<f32>) -> f32 {
     return dot(c, f);
 }
 
+// Below this spread a color is gray: `l - n` and `x - l` stay positive above
+// it for any color whose channels differ by more than about 1e-5.
+const CLIP_COLOR_GRAY = 1e-6;
+
 fn clip_color(c_in: vec3<f32>) -> vec3<f32> {
     var c = c_in;
     let l = lum(c);
     let n = min(c.x, min(c.y, c.z));
     let x = max(c.x, max(c.y, c.z));
+    // Gaanim patch: a gray out of range has all three channels equal, so
+    // `l - n` or `x - l` is 0 (or rounds below it) and the division gave
+    // NaN, which the target stores as black (linebender/vello#1999). Clip
+    // such a gray to its luminosity instead.
     if n < 0.0 {
-        c = l + (((c - l) * l) / (l - n));
+        if l - n > CLIP_COLOR_GRAY {
+            c = l + (((c - l) * l) / (l - n));
+        } else {
+            c = vec3(clamp(l, 0.0, 1.0));
+        }
     }
     if x > 1.0 {
-        c = l + (((c - l) * (1.0 - l)) / (x - l));
+        if x - l > CLIP_COLOR_GRAY {
+            c = l + (((c - l) * (1.0 - l)) / (x - l));
+        } else {
+            c = vec3(clamp(l, 0.0, 1.0));
+        }
     }
     return c;
 }
