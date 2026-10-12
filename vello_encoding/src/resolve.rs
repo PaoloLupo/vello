@@ -187,8 +187,12 @@ impl Resolver {
     ) -> (Layout, Ramps<'a>, Images<'a>) {
         let resources = &encoding.resources;
         if resources.patches.is_empty() {
+            // A solid-only frame must preserve atlas dimensions and residency.
+            // Returning Images::default() makes the renderer replace the atlas
+            // with a 1x1 texture while cached images remain marked as uploaded.
+            self.image_cache.begin_resolve();
             let layout = resolve_solid_paths_only(encoding, packed);
-            return (layout, Ramps::default(), Images::default());
+            return (layout, Ramps::default(), self.image_cache.images());
         }
         let patch_sizes = self.resolve_patches(encoding);
         self.resolve_pending_images();
@@ -643,4 +647,49 @@ fn size_to_words(byte_size: usize) -> u32 {
 
 fn align_up(len: usize, alignment: u32) -> usize {
     len + (len.wrapping_neg() & (alignment as usize - 1))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use peniko::{Blob, Color, Fill, ImageAlphaType, ImageBrush, ImageFormat, kurbo::Rect};
+
+    #[test]
+    fn image_atlas_survives_solid_and_empty_frames_without_reuploading() {
+        for width in [2, 2048] {
+            let image = ImageData {
+                data: Blob::new(Arc::new(vec![255; (width * 2 * 4) as usize])),
+                format: ImageFormat::Rgba8,
+                alpha_type: ImageAlphaType::Alpha,
+                width,
+                height: 2,
+            };
+            let mut image_encoding = Encoding::default();
+            image_encoding.encode_transform(Transform::IDENTITY);
+            image_encoding.encode_fill_style(Fill::NonZero);
+            image_encoding.encode_shape(&Rect::new(0.0, 0.0, width as f64, 2.0), true);
+            image_encoding.encode_image(&ImageBrush::new(image), 1.0);
+            let mut solid_encoding = Encoding::default();
+            solid_encoding.encode_transform(Transform::IDENTITY);
+            solid_encoding.encode_fill_style(Fill::NonZero);
+            solid_encoding.encode_shape(&Rect::new(0.0, 0.0, 10.0, 10.0), true);
+            solid_encoding.encode_color(Color::BLACK);
+
+            let mut resolver = Resolver::default();
+            let mut packed = Vec::new();
+            let (_, _, first) = resolver.resolve(&image_encoding, &mut packed);
+            let atlas_size = (first.width, first.height);
+            assert!(first.width >= width);
+            assert_eq!(first.images.len(), 1);
+
+            for vector_encoding in [&solid_encoding, &Encoding::default(), &solid_encoding] {
+                let (_, _, vectors) = resolver.resolve(vector_encoding, &mut packed);
+                assert_eq!((vectors.width, vectors.height), atlas_size);
+                assert!(vectors.images.is_empty(), "clear the preceding upload list");
+                let (_, _, replay) = resolver.resolve(&image_encoding, &mut packed);
+                assert_eq!((replay.width, replay.height), atlas_size);
+                assert!(replay.images.is_empty(), "reuse the resident GPU pixels");
+            }
+        }
+    }
 }
