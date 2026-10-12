@@ -2,10 +2,9 @@
 
 ## Vello image replay fix
 
-This directory contains `vello_encoding` 0.9.0 from crates.io, originating at
-Vello commit `875f324f21da93019cae9e8e61d4abfd69893206` (directory
-`vello_encoding`). The upstream MIT and Apache 2.0 licenses are included.
-The root `[patch.crates-io]` applies the same fix to preview and export.
+Gaanim builds `vello_encoding` from this branch (see `GAANIM.md` at the root)
+through its `[patch.crates-io]`, so these fixes reach the preview, the
+exports and the web players.
 
 This fix changes `Resolver::resolve` in `src/resolve.rs`. On a frame with no resource
 patches (solid vector paths or an empty scene), `Resolver::resolve` returned
@@ -25,9 +24,8 @@ Regression checks:
 - `just test-package gaanim_export --lib raster_images_survive_vector_only_frames_and_replay -- --ignored`:
   actual GPU pixels across three image/vector/image playback cycles.
 
-Remove this fix after upgrading to an upstream release that passes both
-checks. Do not edit the Cargo registry cache; this copy keeps the fix
-reproducible in other checkouts and release builds.
+Drop this commit when rebasing onto an upstream release that passes both
+checks.
 
 ## Scene-sized GPU buffers
 
@@ -111,7 +109,7 @@ Regression checks:
   for even, uneven, repeated and single stops, and for 4000 random ones
   (opaque, transparent, out-of-range channels); many ramps survive between
   renders; changing ramps add no rows; unused ramps free their rows.
-- Exported PNG frames of `examples/performance_3d.py` equal those of the
+- Exported PNG frames of `tests/performance/scenes/performance_3d.py` equal those of the
   unpatched build.
 
 ## Lint expectation on `encode_brush`
